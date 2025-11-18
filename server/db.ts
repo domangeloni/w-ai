@@ -143,12 +143,12 @@ export async function createAnalysis(data: InsertAnalysis) {
   const supabase = getSupabase();
   if (!supabase) return null;
 
-  const { data: inserted, error } = await supabase.from('analyses').insert(data).select().maybeSingle();
+  const { error } = await supabase.from('analyses').insert(data);
   if (error) {
     console.error('[Database] createAnalysis error:', error.message);
     return null;
   }
-  return inserted || null;
+  return data; // Return the created analysis data
 }
 
 export async function getUserAnalyses(userId: number, limit?: number) {
@@ -234,4 +234,7 @@ export async function logUsage(data: InsertUsageLog) {
   if (!supabase) return;
 
   const { error } = await supabase.from('usageLogs').insert(data);
-  if
+  if (error) {
+    console.error('[Database] logUsage error:', error.message);
+  }
+}
