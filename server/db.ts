@@ -1,209 +1,228 @@
-import { eq, desc } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { InsertUser, users, profiles, analyses, subscriptions, usageLogs, InsertProfile, InsertAnalysis, InsertSubscription, InsertUsageLog } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
-let _db: ReturnType<typeof drizzle> | null = null;
+const supabaseUrl = 'https://your-supabase-url.supabase.co';
+const supabaseKey = 'your-anon-key';
+const supabase = createClient(supabaseUrl, supabaseKey);
 
-export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
-    try {
-      _db = drizzle(process.env.DATABASE_URL);
-    } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
-      _db = null;
-    }
+let _supabase: SupabaseClient | null = null;
+
+function getSupabase(): SupabaseClient | null {
+  if (_supabase) return _supabase;
+
+  const url = process.env.SUPABASE_URL || '';
+  // Prefer service role key for server-side operations
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
+
+  if (!url || !key) {
+    console.warn('[Database] SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set');
+    return null;
   }
-  return _db;
+
+  _supabase = createClient(url, key, { auth: { persistSession: false } });
+  return _supabase;
 }
 
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) {
     throw new Error("User openId is required for upsert");
   }
-
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
+  const supabase = getSupabase();
+  if (!supabase) {
+    console.warn('[Database] Cannot upsert user: supabase client not available');
     return;
   }
 
   try {
-    const values: InsertUser = {
+    const values: Record<string, unknown> = {
       openId: user.openId,
     };
-    const updateSet: Record<string, unknown> = {};
 
     const textFields = ["name", "email", "loginMethod"] as const;
     type TextField = (typeof textFields)[number];
 
-    const assignNullable = (field: TextField) => {
-      const value = user[field];
-      if (value === undefined) return;
-      const normalized = value ?? null;
-      values[field] = normalized;
-      updateSet[field] = normalized;
-    };
-
-    textFields.forEach(assignNullable);
-
-    if (user.lastSignedIn !== undefined) {
-      values.lastSignedIn = user.lastSignedIn;
-      updateSet.lastSignedIn = user.lastSignedIn;
-    }
-    if (user.role !== undefined) {
-      values.role = user.role;
-      updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
-    }
-
-    if (!values.lastSignedIn) {
-      values.lastSignedIn = new Date();
-    }
-
-    if (Object.keys(updateSet).length === 0) {
-      updateSet.lastSignedIn = new Date();
-    }
-
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
+    textFields.forEach((field) => {
+      const v = (user as any)[field];
+      if (v !== undefined) values[field] = v ?? null;
     });
+
+    if (user.lastSignedIn !== undefined) values.lastSignedIn = user.lastSignedIn;
+    if (user.role !== undefined) values.role = user.role;
+    else if (user.openId === ENV.ownerOpenId) values.role = 'admin';
+
+    if (!values.lastSignedIn) values.lastSignedIn = new Date().toISOString();
+
+    // Supabase upsert (on conflict by openId)
+    const { error } = await supabase.from('users').upsert(values, { onConflict: 'openId' });
+    if (error) {
+      console.error('[Database] Failed to upsert user:', error.message);
+      throw error;
+    }
   } catch (error) {
-    console.error("[Database] Failed to upsert user:", error);
+    console.error('[Database] Failed to upsert user:', error);
     throw error;
   }
 }
 
 export async function getUserByOpenId(openId: string) {
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
+  const supabase = getSupabase();
+  if (!supabase) {
+    console.warn('[Database] Cannot get user: supabase client not available');
     return undefined;
   }
 
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
+  const { data, error } = await supabase.from('users').select('*').eq('openId', openId).limit(1).maybeSingle();
+  if (error) {
+    console.error('[Database] getUserByOpenId error:', error.message);
+    return undefined;
+  }
+  return data || undefined;
 }
 
 // Profile helpers
 export async function getOrCreateProfile(userId: number) {
-  const db = await getDb();
-  if (!db) return null;
+  const supabase = getSupabase();
+  if (!supabase) return null;
 
-  const existing = await db.select().from(profiles).where(eq(profiles.userId, userId)).limit(1);
-  
-  if (existing.length > 0) {
-    return existing[0];
+  const { data: existing, error: selectError } = await supabase.from('profiles').select('*').eq('userId', userId).limit(1).maybeSingle();
+  if (selectError) {
+    console.error('[Database] getOrCreateProfile select error:', selectError.message);
+    return null;
   }
 
-  // Create new profile
-  await db.insert(profiles).values({
-    userId,
-    subscriptionStatus: "free",
-    analysisCount: 0,
-  });
+  if (existing) return existing as any;
 
-  const newProfile = await db.select().from(profiles).where(eq(profiles.userId, userId)).limit(1);
-  return newProfile[0] || null;
+  const { data: inserted, error: insertError } = await supabase.from('profiles').insert({
+    userId,
+    subscriptionStatus: 'free',
+    analysisCount: 0,
+  }).select().maybeSingle();
+
+  if (insertError) {
+    console.error('[Database] getOrCreateProfile insert error:', insertError.message);
+    return null;
+  }
+
+  return inserted as any || null;
 }
 
 export async function updateProfile(userId: number, data: Partial<InsertProfile>) {
-  const db = await getDb();
-  if (!db) return null;
+  const supabase = getSupabase();
+  if (!supabase) return null;
 
-  await db.update(profiles).set({
+  const { error } = await supabase.from('profiles').update({
     ...data,
-    updatedAt: new Date(),
-  }).where(eq(profiles.userId, userId));
+    updatedAt: new Date().toISOString(),
+  }).eq('userId', userId);
+
+  if (error) {
+    console.error('[Database] updateProfile error:', error.message);
+    return null;
+  }
 
   return getOrCreateProfile(userId);
 }
 
 export async function incrementAnalysisCount(userId: number) {
-  const db = await getDb();
-  if (!db) return;
+  const supabase = getSupabase();
+  if (!supabase) return;
 
   const profile = await getOrCreateProfile(userId);
   if (profile) {
-    await db.update(profiles).set({
+    const { error } = await supabase.from('profiles').update({
       analysisCount: (profile.analysisCount || 0) + 1,
-      updatedAt: new Date(),
-    }).where(eq(profiles.userId, userId));
+      updatedAt: new Date().toISOString(),
+    }).eq('userId', userId);
+    if (error) console.error('[Database] incrementAnalysisCount error:', error.message);
   }
 }
 
 // Analysis helpers
 export async function createAnalysis(data: InsertAnalysis) {
-  const db = await getDb();
-  if (!db) return null;
+  const supabase = getSupabase();
+  if (!supabase) return null;
 
-  const result = await db.insert(analyses).values(data);
-  const insertId = Number(result[0].insertId);
-  
-  const newAnalysis = await db.select().from(analyses).where(eq(analyses.id, insertId)).limit(1);
-  return newAnalysis[0] || null;
+  const { data: inserted, error } = await supabase.from('analyses').insert(data).select().maybeSingle();
+  if (error) {
+    console.error('[Database] createAnalysis error:', error.message);
+    return null;
+  }
+  return inserted || null;
 }
 
 export async function getUserAnalyses(userId: number, limit?: number) {
-  const db = await getDb();
-  if (!db) return [];
+  const supabase = getSupabase();
+  if (!supabase) return [];
 
-  let query = db.select().from(analyses).where(eq(analyses.userId, userId)).orderBy(desc(analyses.createdAt));
-  
-  if (limit) {
-    query = query.limit(limit) as any;
+  let q = supabase.from('analyses').select('*').eq('userId', userId).order('createdAt', { ascending: false });
+  if (limit) q = (q as any).limit(limit);
+  const { data, error } = await (q as any);
+  if (error) {
+    console.error('[Database] getUserAnalyses error:', error.message);
+    return [];
   }
-
-  return query;
+  return data || [];
 }
 
 export async function getAnalysisById(id: number) {
-  const db = await getDb();
-  if (!db) return null;
+  const supabase = getSupabase();
+  if (!supabase) return null;
 
-  const result = await db.select().from(analyses).where(eq(analyses.id, id)).limit(1);
-  return result[0] || null;
+  const { data, error } = await supabase.from('analyses').select('*').eq('id', id).maybeSingle();
+  if (error) {
+    console.error('[Database] getAnalysisById error:', error.message);
+    return null;
+  }
+  return data || null;
 }
 
 export async function deleteAnalysis(id: number, userId: number) {
-  const db = await getDb();
-  if (!db) return false;
+  const supabase = getSupabase();
+  if (!supabase) return false;
 
-  // Verify ownership
-  const analysis = await db.select().from(analyses).where(eq(analyses.id, id)).limit(1);
-  if (!analysis[0] || analysis[0].userId !== userId) {
+  const { data: analysis, error: selectError } = await supabase.from('analyses').select('*').eq('id', id).maybeSingle();
+  if (selectError) {
+    console.error('[Database] deleteAnalysis select error:', selectError.message);
     return false;
   }
+  if (!analysis || analysis.userId !== userId) return false;
 
-  await db.delete(analyses).where(eq(analyses.id, id));
+  const { error } = await supabase.from('analyses').delete().eq('id', id);
+  if (error) {
+    console.error('[Database] deleteAnalysis error:', error.message);
+    return false;
+  }
   return true;
 }
 
 // Subscription helpers
 export async function getSubscription(userId: number) {
-  const db = await getDb();
-  if (!db) return null;
+  const supabase = getSupabase();
+  if (!supabase) return null;
 
-  const result = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).limit(1);
-  return result[0] || null;
+  const { data, error } = await supabase.from('subscriptions').select('*').eq('userId', userId).maybeSingle();
+  if (error) {
+    console.error('[Database] getSubscription error:', error.message);
+    return null;
+  }
+  return data || null;
 }
 
 export async function upsertSubscription(data: InsertSubscription) {
-  const db = await getDb();
-  if (!db) return null;
+  const supabase = getSupabase();
+  if (!supabase) return null;
 
-  const existing = await db.select().from(subscriptions).where(eq(subscriptions.userId, data.userId)).limit(1);
+  // Use upsert on userId
+  const payload = {
+    ...data,
+    updatedAt: new Date().toISOString(),
+  } as any;
 
-  if (existing.length > 0) {
-    await db.update(subscriptions).set({
-      ...data,
-      updatedAt: new Date(),
-    }).where(eq(subscriptions.userId, data.userId));
-  } else {
-    await db.insert(subscriptions).values(data);
+  const { error } = await supabase.from('subscriptions').upsert(payload, { onConflict: 'userId' });
+  if (error) {
+    console.error('[Database] upsertSubscription error:', error.message);
+    return null;
   }
 
   return getSubscription(data.userId);
@@ -211,25 +230,8 @@ export async function upsertSubscription(data: InsertSubscription) {
 
 // Usage log helpers
 export async function logUsage(data: InsertUsageLog) {
-  const db = await getDb();
-  if (!db) return;
+  const supabase = getSupabase();
+  if (!supabase) return;
 
-  await db.insert(usageLogs).values(data);
-}
-
-// Check if user has active premium subscription
-export async function hasActivePremium(userId: number): Promise<boolean> {
-  const profile = await getOrCreateProfile(userId);
-  if (!profile) return false;
-
-  if (profile.subscriptionStatus !== "active") return false;
-
-  // Check if subscription has expired
-  if (profile.subscriptionEndsAt && profile.subscriptionEndsAt < new Date()) {
-    // Update status to expired
-    await updateProfile(userId, { subscriptionStatus: "free" });
-    return false;
-  }
-
-  return true;
-}
+  const { error } = await supabase.from('usageLogs').insert(data);
+  if
