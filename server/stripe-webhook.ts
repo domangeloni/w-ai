@@ -89,17 +89,7 @@ export async function handleStripeWebhook(req: Request, res: Response) {
         const customerId = subscription.customer as string;
         
         // Find user by customer ID
-        const existingSub = await db.getDb().then(async (dbInstance) => {
-          if (!dbInstance) return null;
-          const { subscriptions } = await import("../drizzle/schema");
-          const { eq } = await import("drizzle-orm");
-          const result = await dbInstance
-            .select()
-            .from(subscriptions)
-            .where(eq(subscriptions.stripeCustomerId, customerId))
-            .limit(1);
-          return result[0] || null;
-        });
+        const existingSub = await db.getSubscriptionByCustomerId(customerId);
         
         if (existingSub) {
           await db.updateProfile(existingSub.userId, {
@@ -129,17 +119,7 @@ export async function handleStripeWebhook(req: Request, res: Response) {
         const customerId = subscription.customer as string;
         
         // Find user by customer ID
-        const existingSub = await db.getDb().then(async (dbInstance) => {
-          if (!dbInstance) return null;
-          const { subscriptions } = await import("../drizzle/schema");
-          const { eq } = await import("drizzle-orm");
-          const result = await dbInstance
-            .select()
-            .from(subscriptions)
-            .where(eq(subscriptions.stripeCustomerId, customerId))
-            .limit(1);
-          return result[0] || null;
-        });
+        const existingSub = await db.getSubscriptionByCustomerId(customerId);
         
         if (existingSub) {
           await db.updateProfile(existingSub.userId, {

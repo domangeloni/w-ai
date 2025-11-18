@@ -244,3 +244,29 @@ export async function logUsage(data: InsertUsageLog) {
     console.error('[Database] logUsage error:', error.message);
   }
 }
+
+export async function hasActivePremium(userId: number) {
+  const profile = await getOrCreateProfile(userId);
+  if (!profile) return false;
+
+  if (profile.subscriptionStatus !== 'active') return false;
+
+  if (!profile.subscriptionEndsAt) return true;
+
+  const endsAt = new Date(profile.subscriptionEndsAt);
+  if (Number.isNaN(endsAt.getTime())) return true;
+
+  return endsAt.getTime() > Date.now();
+}
+
+export async function getSubscriptionByCustomerId(customerId: string) {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase.from('subscriptions').select('*').eq('stripeCustomerId', customerId).maybeSingle();
+  if (error) {
+    console.error('[Database] getSubscriptionByCustomerId error:', error.message);
+    return null;
+  }
+  return data || null;
+}
