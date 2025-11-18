@@ -4,7 +4,10 @@
   "outputDirectory": "dist/public",
   "framework": "vite",
   "env": {
-    "DATABASE_URL": "",
+    "SUPABASE_URL": "https://ombhxkmqryjmpqgmzery.supabase.co",
+    "SUPABASE_SERVICE_ROLE_KEY": "sb_secret_b1UF-qu8F0yL8DOYHzatTA__6mpAw41",
+    "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9tYmh4a21xcnlqbXBxZ216ZXJ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM0OTMxOTUsImV4cCI6MjA3OTA2OTE5NX0.VUJP7cJVoBJ5CrjEegRNaJxL6ISc3SDN70ecfsAx9bs",
+    "VITE_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9tYmh4a21xcnlqbXBxZ216ZXJ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM0OTMxOTUsImV4cCI6MjA3OTA2OTE5NX0.VUJP7cJVoBJ5CrjEegRNaJxL6ISc3SDN70ecfsAx9bs",
     "JWT_SECRET": "dev-placeholder-jwt",
     "VITE_APP_ID": "",
     "OAUTH_SERVER_URL": "",
