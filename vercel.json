@@ -4,30 +4,25 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "env": {
-    "DATABASE_URL": "@database_url",
-    "JWT_SECRET": "@jwt_secret",
-    "VITE_APP_ID": "@vite_app_id",
-    "OAUTH_SERVER_URL": "@oauth_server_url",
-    "VITE_OAUTH_PORTAL_URL": "@vite_oauth_portal_url",
-    "OWNER_OPEN_ID": "@owner_open_id",
-    "OWNER_NAME": "@owner_name",
-    "VITE_APP_TITLE": "@vite_app_title",
-    "VITE_APP_LOGO": "@vite_app_logo",
-    "BUILT_IN_FORGE_API_URL": "@built_in_forge_api_url",
-    "BUILT_IN_FORGE_API_KEY": "@built_in_forge_api_key",
-    "VITE_FRONTEND_FORGE_API_KEY": "@vite_frontend_forge_api_key",
-    "VITE_FRONTEND_FORGE_API_URL": "@vite_frontend_forge_api_url",
-    "OPENAI_API_KEY": "@openai_api_key",
-    "STRIPE_SECRET_KEY": "@stripe_secret_key",
-    "STRIPE_WEBHOOK_SECRET": "@stripe_webhook_secret",
-    "VITE_STRIPE_PUBLISHABLE_KEY": "@vite_stripe_publishable_key"
+    "DATABASE_URL": "",
+    "JWT_SECRET": "dev-placeholder-jwt",
+    "VITE_APP_ID": "",
+    "OAUTH_SERVER_URL": "",
+    "VITE_OAUTH_PORTAL_URL": "",
+    "OWNER_OPEN_ID": "",
+    "OWNER_NAME": "",
+    "VITE_APP_TITLE": "W-AI Trading (dev)",
+    "VITE_APP_LOGO": "",
+    "BUILT_IN_FORGE_API_URL": "",
+    "BUILT_IN_FORGE_API_KEY": "",
+    "VITE_FRONTEND_FORGE_API_KEY": "",
+    "VITE_FRONTEND_FORGE_API_URL": "",
+    "OPENAI_API_KEY": "",
+    "STRIPE_SECRET_KEY": "",
+    "STRIPE_WEBHOOK_SECRET": "",
+    "VITE_STRIPE_PUBLISHABLE_KEY": ""
   },
   "regions": ["sfo1"],
-  "functions": {
-    "api/**/*.ts": {
-      "runtime": "nodejs18.x"
-    }
-  },
   "rewrites": [
     {
       "source": "/api/(.*)",
