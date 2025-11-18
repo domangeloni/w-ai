@@ -8,94 +8,6 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// drizzle/schema.ts
-var schema_exports = {};
-__export(schema_exports, {
-  analyses: () => analyses,
-  profiles: () => profiles,
-  subscriptions: () => subscriptions,
-  usageLogs: () => usageLogs,
-  users: () => users
-});
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json } from "drizzle-orm/mysql-core";
-var users, profiles, analyses, subscriptions, usageLogs;
-var init_schema = __esm({
-  "drizzle/schema.ts"() {
-    "use strict";
-    users = mysqlTable("users", {
-      id: int("id").autoincrement().primaryKey(),
-      openId: varchar("openId", { length: 64 }).notNull().unique(),
-      name: text("name"),
-      email: varchar("email", { length: 320 }),
-      loginMethod: varchar("loginMethod", { length: 64 }),
-      role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
-      createdAt: timestamp("createdAt").defaultNow().notNull(),
-      updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-      lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull()
-    });
-    profiles = mysqlTable("profiles", {
-      id: int("id").autoincrement().primaryKey(),
-      userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-      subscriptionStatus: varchar("subscriptionStatus", { length: 50 }).default("free").notNull(),
-      subscriptionPlan: varchar("subscriptionPlan", { length: 50 }),
-      subscriptionEndsAt: timestamp("subscriptionEndsAt"),
-      analysisCount: int("analysisCount").default(0).notNull(),
-      createdAt: timestamp("createdAt").defaultNow().notNull(),
-      updatedAt: timestamp("updatedAt").defaultNow().notNull()
-    });
-    analyses = mysqlTable("analyses", {
-      id: int("id").autoincrement().primaryKey(),
-      userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-      imageUrl: text("imageUrl").notNull(),
-      thumbnailUrl: text("thumbnailUrl"),
-      assetName: varchar("assetName", { length: 100 }),
-      timeframe: varchar("timeframe", { length: 50 }),
-      // Basic results (free)
-      trend: varchar("trend", { length: 50 }),
-      confidence: int("confidence"),
-      // Technical indicators (free)
-      rsiValue: int("rsiValue"),
-      rsiStatus: varchar("rsiStatus", { length: 50 }),
-      macdSignal: varchar("macdSignal", { length: 100 }),
-      maStatus: varchar("maStatus", { length: 100 }),
-      patterns: json("patterns").$type(),
-      // Trading signals (premium)
-      buyZoneMin: varchar("buyZoneMin", { length: 50 }),
-      buyZoneMax: varchar("buyZoneMax", { length: 50 }),
-      stopLoss: varchar("stopLoss", { length: 50 }),
-      takeProfit1: varchar("takeProfit1", { length: 50 }),
-      takeProfit2: varchar("takeProfit2", { length: 50 }),
-      riskReward: varchar("riskReward", { length: 50 }),
-      // Risk analysis (premium)
-      riskLevel: varchar("riskLevel", { length: 50 }),
-      volatility: varchar("volatility", { length: 50 }),
-      trendStrength: int("trendStrength"),
-      analysisRaw: json("analysisRaw"),
-      createdAt: timestamp("createdAt").defaultNow().notNull()
-    });
-    subscriptions = mysqlTable("subscriptions", {
-      id: int("id").autoincrement().primaryKey(),
-      userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-      stripeCustomerId: varchar("stripeCustomerId", { length: 255 }),
-      stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 255 }),
-      plan: varchar("plan", { length: 50 }),
-      status: varchar("status", { length: 50 }),
-      currentPeriodStart: timestamp("currentPeriodStart"),
-      currentPeriodEnd: timestamp("currentPeriodEnd"),
-      cancelAtPeriodEnd: boolean("cancelAtPeriodEnd").default(false),
-      createdAt: timestamp("createdAt").defaultNow().notNull(),
-      updatedAt: timestamp("updatedAt").defaultNow().notNull()
-    });
-    usageLogs = mysqlTable("usageLogs", {
-      id: int("id").autoincrement().primaryKey(),
-      userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-      action: varchar("action", { length: 100 }).notNull(),
-      metadata: json("metadata"),
-      createdAt: timestamp("createdAt").defaultNow().notNull()
-    });
-  }
-});
-
 // server/_core/env.ts
 var ENV;
 var init_env = __esm({
@@ -115,186 +27,194 @@ var init_env = __esm({
 });
 
 // server/db.ts
-import { eq, desc } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
-async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
-    try {
-      _db = drizzle(process.env.DATABASE_URL);
-    } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
-      _db = null;
-    }
+import { createClient } from "@supabase/supabase-js";
+function getSupabase() {
+  if (_supabase) return _supabase;
+  const url = process.env.SUPABASE_URL || "";
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "";
+  if (!url || !key) {
+    console.warn("[Database] SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY / SUPABASE_ANON_KEY not set");
+    return null;
   }
-  return _db;
+  _supabase = createClient(url, key, { auth: { persistSession: false } });
+  return _supabase;
 }
 async function upsertUser(user) {
   if (!user.openId) {
     throw new Error("User openId is required for upsert");
   }
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
+  const supabase = getSupabase();
+  if (!supabase) {
+    console.warn("[Database] Cannot upsert user: supabase client not available");
     return;
   }
   try {
     const values = {
       openId: user.openId
     };
-    const updateSet = {};
     const textFields = ["name", "email", "loginMethod"];
-    const assignNullable = (field) => {
-      const value = user[field];
-      if (value === void 0) return;
-      const normalized = value ?? null;
-      values[field] = normalized;
-      updateSet[field] = normalized;
-    };
-    textFields.forEach(assignNullable);
-    if (user.lastSignedIn !== void 0) {
-      values.lastSignedIn = user.lastSignedIn;
-      updateSet.lastSignedIn = user.lastSignedIn;
-    }
-    if (user.role !== void 0) {
-      values.role = user.role;
-      updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = "admin";
-      updateSet.role = "admin";
-    }
-    if (!values.lastSignedIn) {
-      values.lastSignedIn = /* @__PURE__ */ new Date();
-    }
-    if (Object.keys(updateSet).length === 0) {
-      updateSet.lastSignedIn = /* @__PURE__ */ new Date();
-    }
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet
+    textFields.forEach((field) => {
+      const v = user[field];
+      if (v !== void 0) values[field] = v ?? null;
     });
+    if (user.lastSignedIn !== void 0) values.lastSignedIn = user.lastSignedIn;
+    if (user.role !== void 0) values.role = user.role;
+    else if (user.openId === ENV.ownerOpenId) values.role = "admin";
+    if (!values.lastSignedIn) values.lastSignedIn = (/* @__PURE__ */ new Date()).toISOString();
+    const { error } = await supabase.from("users").upsert(values, { onConflict: "openId" });
+    if (error) {
+      console.error("[Database] Failed to upsert user:", error.message);
+      throw error;
+    }
   } catch (error) {
     console.error("[Database] Failed to upsert user:", error);
     throw error;
   }
 }
 async function getUserByOpenId(openId) {
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
+  const supabase = getSupabase();
+  if (!supabase) {
+    console.warn("[Database] Cannot get user: supabase client not available");
     return void 0;
   }
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-  return result.length > 0 ? result[0] : void 0;
+  const { data, error } = await supabase.from("users").select("*").eq("openId", openId).limit(1).maybeSingle();
+  if (error) {
+    console.error("[Database] getUserByOpenId error:", error.message);
+    return void 0;
+  }
+  return data || void 0;
 }
 async function getOrCreateProfile(userId) {
-  const db = await getDb();
-  if (!db) return null;
-  const existing = await db.select().from(profiles).where(eq(profiles.userId, userId)).limit(1);
-  if (existing.length > 0) {
-    return existing[0];
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { data: existing, error: selectError } = await supabase.from("profiles").select("*").eq("userId", userId).limit(1).maybeSingle();
+  if (selectError) {
+    console.error("[Database] getOrCreateProfile select error:", selectError.message);
+    return null;
   }
-  await db.insert(profiles).values({
+  if (existing) return existing;
+  const { data: inserted, error: insertError } = await supabase.from("profiles").insert({
     userId,
     subscriptionStatus: "free",
     analysisCount: 0
-  });
-  const newProfile = await db.select().from(profiles).where(eq(profiles.userId, userId)).limit(1);
-  return newProfile[0] || null;
+  }).select().maybeSingle();
+  if (insertError) {
+    console.error("[Database] getOrCreateProfile insert error:", insertError.message);
+    return null;
+  }
+  return inserted || null;
 }
 async function updateProfile(userId, data) {
-  const db = await getDb();
-  if (!db) return null;
-  await db.update(profiles).set({
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { error } = await supabase.from("profiles").update({
     ...data,
-    updatedAt: /* @__PURE__ */ new Date()
-  }).where(eq(profiles.userId, userId));
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  }).eq("userId", userId);
+  if (error) {
+    console.error("[Database] updateProfile error:", error.message);
+    return null;
+  }
   return getOrCreateProfile(userId);
 }
 async function incrementAnalysisCount(userId) {
-  const db = await getDb();
-  if (!db) return;
+  const supabase = getSupabase();
+  if (!supabase) return;
   const profile = await getOrCreateProfile(userId);
   if (profile) {
-    await db.update(profiles).set({
+    const { error } = await supabase.from("profiles").update({
       analysisCount: (profile.analysisCount || 0) + 1,
-      updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq(profiles.userId, userId));
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    }).eq("userId", userId);
+    if (error) console.error("[Database] incrementAnalysisCount error:", error.message);
   }
 }
 async function createAnalysis(data) {
-  const db = await getDb();
-  if (!db) return null;
-  const result = await db.insert(analyses).values(data);
-  const insertId = Number(result[0].insertId);
-  const newAnalysis = await db.select().from(analyses).where(eq(analyses.id, insertId)).limit(1);
-  return newAnalysis[0] || null;
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { error } = await supabase.from("analyses").insert(data);
+  if (error) {
+    console.error("[Database] createAnalysis error:", error.message);
+    return null;
+  }
+  return data;
 }
 async function getUserAnalyses(userId, limit) {
-  const db = await getDb();
-  if (!db) return [];
-  let query = db.select().from(analyses).where(eq(analyses.userId, userId)).orderBy(desc(analyses.createdAt));
-  if (limit) {
-    query = query.limit(limit);
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  let q = supabase.from("analyses").select("*").eq("userId", userId).order("createdAt", { ascending: false });
+  if (limit) q = q.limit(limit);
+  const { data, error } = await q;
+  if (error) {
+    console.error("[Database] getUserAnalyses error:", error.message);
+    return [];
   }
-  return query;
+  return data || [];
 }
 async function getAnalysisById(id) {
-  const db = await getDb();
-  if (!db) return null;
-  const result = await db.select().from(analyses).where(eq(analyses.id, id)).limit(1);
-  return result[0] || null;
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { data, error } = await supabase.from("analyses").select("*").eq("id", id).maybeSingle();
+  if (error) {
+    console.error("[Database] getAnalysisById error:", error.message);
+    return null;
+  }
+  return data || null;
 }
 async function deleteAnalysis(id, userId) {
-  const db = await getDb();
-  if (!db) return false;
-  const analysis = await db.select().from(analyses).where(eq(analyses.id, id)).limit(1);
-  if (!analysis[0] || analysis[0].userId !== userId) {
+  const supabase = getSupabase();
+  if (!supabase) return false;
+  const { data: analysis, error: selectError } = await supabase.from("analyses").select("*").eq("id", id).maybeSingle();
+  if (selectError) {
+    console.error("[Database] deleteAnalysis select error:", selectError.message);
     return false;
   }
-  await db.delete(analyses).where(eq(analyses.id, id));
+  if (!analysis || analysis.userId !== userId) return false;
+  const { error } = await supabase.from("analyses").delete().eq("id", id);
+  if (error) {
+    console.error("[Database] deleteAnalysis error:", error.message);
+    return false;
+  }
   return true;
 }
 async function getSubscription(userId) {
-  const db = await getDb();
-  if (!db) return null;
-  const result = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).limit(1);
-  return result[0] || null;
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { data, error } = await supabase.from("subscriptions").select("*").eq("userId", userId).maybeSingle();
+  if (error) {
+    console.error("[Database] getSubscription error:", error.message);
+    return null;
+  }
+  return data || null;
 }
 async function upsertSubscription(data) {
-  const db = await getDb();
-  if (!db) return null;
-  const existing = await db.select().from(subscriptions).where(eq(subscriptions.userId, data.userId)).limit(1);
-  if (existing.length > 0) {
-    await db.update(subscriptions).set({
-      ...data,
-      updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq(subscriptions.userId, data.userId));
-  } else {
-    await db.insert(subscriptions).values(data);
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const payload = {
+    ...data,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  const { error } = await supabase.from("subscriptions").upsert(payload, { onConflict: "userId" });
+  if (error) {
+    console.error("[Database] upsertSubscription error:", error.message);
+    return null;
   }
   return getSubscription(data.userId);
 }
 async function logUsage(data) {
-  const db = await getDb();
-  if (!db) return;
-  await db.insert(usageLogs).values(data);
-}
-async function hasActivePremium(userId) {
-  const profile = await getOrCreateProfile(userId);
-  if (!profile) return false;
-  if (profile.subscriptionStatus !== "active") return false;
-  if (profile.subscriptionEndsAt && profile.subscriptionEndsAt < /* @__PURE__ */ new Date()) {
-    await updateProfile(userId, { subscriptionStatus: "free" });
-    return false;
+  const supabase = getSupabase();
+  if (!supabase) return;
+  const { error } = await supabase.from("usageLogs").insert(data);
+  if (error) {
+    console.error("[Database] logUsage error:", error.message);
   }
-  return true;
 }
-var _db;
+var _supabase;
 var init_db = __esm({
   "server/db.ts"() {
     "use strict";
-    init_schema();
     init_env();
-    _db = null;
+    _supabase = null;
   }
 });
 
@@ -583,6 +503,94 @@ var init_products = __esm({
   }
 });
 
+// drizzle/schema.ts
+var schema_exports = {};
+__export(schema_exports, {
+  analyses: () => analyses,
+  profiles: () => profiles,
+  subscriptions: () => subscriptions,
+  usageLogs: () => usageLogs,
+  users: () => users
+});
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json } from "drizzle-orm/mysql-core";
+var users, profiles, analyses, subscriptions, usageLogs;
+var init_schema = __esm({
+  "drizzle/schema.ts"() {
+    "use strict";
+    users = mysqlTable("users", {
+      id: int("id").autoincrement().primaryKey(),
+      openId: varchar("openId", { length: 64 }).notNull().unique(),
+      name: text("name"),
+      email: varchar("email", { length: 320 }),
+      loginMethod: varchar("loginMethod", { length: 64 }),
+      role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+      lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull()
+    });
+    profiles = mysqlTable("profiles", {
+      id: int("id").autoincrement().primaryKey(),
+      userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+      subscriptionStatus: varchar("subscriptionStatus", { length: 50 }).default("free").notNull(),
+      subscriptionPlan: varchar("subscriptionPlan", { length: 50 }),
+      subscriptionEndsAt: timestamp("subscriptionEndsAt"),
+      analysisCount: int("analysisCount").default(0).notNull(),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().notNull()
+    });
+    analyses = mysqlTable("analyses", {
+      id: int("id").autoincrement().primaryKey(),
+      userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+      imageUrl: text("imageUrl").notNull(),
+      thumbnailUrl: text("thumbnailUrl"),
+      assetName: varchar("assetName", { length: 100 }),
+      timeframe: varchar("timeframe", { length: 50 }),
+      // Basic results (free)
+      trend: varchar("trend", { length: 50 }),
+      confidence: int("confidence"),
+      // Technical indicators (free)
+      rsiValue: int("rsiValue"),
+      rsiStatus: varchar("rsiStatus", { length: 50 }),
+      macdSignal: varchar("macdSignal", { length: 100 }),
+      maStatus: varchar("maStatus", { length: 100 }),
+      patterns: json("patterns").$type(),
+      // Trading signals (premium)
+      buyZoneMin: varchar("buyZoneMin", { length: 50 }),
+      buyZoneMax: varchar("buyZoneMax", { length: 50 }),
+      stopLoss: varchar("stopLoss", { length: 50 }),
+      takeProfit1: varchar("takeProfit1", { length: 50 }),
+      takeProfit2: varchar("takeProfit2", { length: 50 }),
+      riskReward: varchar("riskReward", { length: 50 }),
+      // Risk analysis (premium)
+      riskLevel: varchar("riskLevel", { length: 50 }),
+      volatility: varchar("volatility", { length: 50 }),
+      trendStrength: int("trendStrength"),
+      analysisRaw: json("analysisRaw"),
+      createdAt: timestamp("createdAt").defaultNow().notNull()
+    });
+    subscriptions = mysqlTable("subscriptions", {
+      id: int("id").autoincrement().primaryKey(),
+      userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+      stripeCustomerId: varchar("stripeCustomerId", { length: 255 }),
+      stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 255 }),
+      plan: varchar("plan", { length: 50 }),
+      status: varchar("status", { length: 50 }),
+      currentPeriodStart: timestamp("currentPeriodStart"),
+      currentPeriodEnd: timestamp("currentPeriodEnd"),
+      cancelAtPeriodEnd: boolean("cancelAtPeriodEnd").default(false),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().notNull()
+    });
+    usageLogs = mysqlTable("usageLogs", {
+      id: int("id").autoincrement().primaryKey(),
+      userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+      action: varchar("action", { length: 100 }).notNull(),
+      metadata: json("metadata"),
+      createdAt: timestamp("createdAt").defaultNow().notNull()
+    });
+  }
+});
+
 // server/stripe-webhook.ts
 var stripe_webhook_exports = {};
 __export(stripe_webhook_exports, {
@@ -649,11 +657,11 @@ async function handleStripeWebhook(req, res) {
       case "customer.subscription.updated": {
         const subscription = event.data.object;
         const customerId = subscription.customer;
-        const existingSub = await getDb().then(async (dbInstance) => {
+        const existingSub = await (void 0)().then(async (dbInstance) => {
           if (!dbInstance) return null;
           const { subscriptions: subscriptions2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
-          const { eq: eq2 } = await import("drizzle-orm");
-          const result = await dbInstance.select().from(subscriptions2).where(eq2(subscriptions2.stripeCustomerId, customerId)).limit(1);
+          const { eq } = await import("drizzle-orm");
+          const result = await dbInstance.select().from(subscriptions2).where(eq(subscriptions2.stripeCustomerId, customerId)).limit(1);
           return result[0] || null;
         });
         if (existingSub) {
@@ -678,11 +686,11 @@ async function handleStripeWebhook(req, res) {
       case "customer.subscription.deleted": {
         const subscription = event.data.object;
         const customerId = subscription.customer;
-        const existingSub = await getDb().then(async (dbInstance) => {
+        const existingSub = await (void 0)().then(async (dbInstance) => {
           if (!dbInstance) return null;
           const { subscriptions: subscriptions2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
-          const { eq: eq2 } = await import("drizzle-orm");
-          const result = await dbInstance.select().from(subscriptions2).where(eq2(subscriptions2.stripeCustomerId, customerId)).limit(1);
+          const { eq } = await import("drizzle-orm");
+          const result = await dbInstance.select().from(subscriptions2).where(eq(subscriptions2.stripeCustomerId, customerId)).limit(1);
           return result[0] || null;
         });
         if (existingSub) {
@@ -1167,7 +1175,7 @@ init_db();
 import { z as z2 } from "zod";
 import { TRPCError as TRPCError3 } from "@trpc/server";
 var premiumProcedure = protectedProcedure.use(async ({ ctx, next }) => {
-  const hasPremium = await hasActivePremium(ctx.user.id);
+  const hasPremium = await (void 0)(ctx.user.id);
   return next({
     ctx: {
       ...ctx,
@@ -1280,7 +1288,7 @@ var appRouter = router({
     })).mutation(async ({ ctx, input }) => {
       const { imageBase64, assetName, strategy } = input;
       const profile = await getOrCreateProfile(ctx.user.id);
-      const hasPremium = await hasActivePremium(ctx.user.id);
+      const hasPremium = await (void 0)(ctx.user.id);
       if (!hasPremium && (profile?.analysisCount || 0) >= 3) {
         throw new TRPCError3({
           code: "FORBIDDEN",
@@ -1433,7 +1441,7 @@ Provide your analysis in the following JSON format:
       return getSubscription(ctx.user.id);
     }),
     checkPremium: protectedProcedure.query(async ({ ctx }) => {
-      const hasPremium = await hasActivePremium(ctx.user.id);
+      const hasPremium = await (void 0)(ctx.user.id);
       const profile = await getOrCreateProfile(ctx.user.id);
       return {
         hasPremium,
