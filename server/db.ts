@@ -2,9 +2,9 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { InsertUser, users, profiles, analyses, subscriptions, usageLogs, InsertProfile, InsertAnalysis, InsertSubscription, InsertUsageLog } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
-const supabaseUrl = 'https://your-supabase-url.supabase.co';
-const supabaseKey = 'your-anon-key';
-const supabase = createClient(supabaseUrl, supabaseKey);
+// NOTE: Do NOT hardcode secrets in source. Provide the following env vars at runtime:
+// - SUPABASE_URL
+// - SUPABASE_SERVICE_ROLE_KEY (preferred for server-side operations) or SUPABASE_ANON_KEY
 
 let _supabase: SupabaseClient | null = null;
 
@@ -12,11 +12,10 @@ function getSupabase(): SupabaseClient | null {
   if (_supabase) return _supabase;
 
   const url = process.env.SUPABASE_URL || '';
-  // Prefer service role key for server-side operations
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
 
   if (!url || !key) {
-    console.warn('[Database] SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set');
+    console.warn('[Database] SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY / SUPABASE_ANON_KEY not set');
     return null;
   }
 

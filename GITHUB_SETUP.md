@@ -139,6 +139,20 @@ Agora é automático! Sempre que você fizer push para `main`:
 2. URL: `https://seu-projeto.vercel.app/api/stripe/webhook`
 3. Copie o Signing Secret como `STRIPE_WEBHOOK_SECRET`
 
+## 🗄️ Supabase (Banco de Dados PostgreSQL hospedado)
+
+Se você pretende usar Supabase como backend de banco de dados, adicione as variáveis abaixo no Vercel / GitHub Secrets e localmente em um arquivo `.env` (não commitá-lo).
+
+```
+SUPABASE_URL=https://<your-project-ref>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key> # servidor (privado)
+SUPABASE_ANON_KEY=<your-anon-key> # opcional, público
+```
+
+No servidor (backend) prefira usar `SUPABASE_SERVICE_ROLE_KEY`. Nunca exponha esta chave em código cliente ou em repositórios públicos.
+
+Localmente, copie `.env.example` para `.env` e preencha os valores.
+
 ## 📞 Suporte
 
 Se tiver problemas:
