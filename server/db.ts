@@ -14,6 +14,13 @@ function getSupabase(): SupabaseClient | null {
   const url = process.env.SUPABASE_URL || '';
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
 
+  // Log para depuração em produção
+  console.log('[Supabase ENV]', {
+    SUPABASE_URL: url,
+    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ? '[set]' : '[missing]',
+    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY ? '[set]' : '[missing]'
+  });
+
   if (!url || !key) {
     console.warn('[Database] SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY / SUPABASE_ANON_KEY not set');
     return null;
